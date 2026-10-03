@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# logs
+*.log
+npm-debug.log*
+
+# env
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Blender backups
+*.blend1
+*.blend2
+
+# Claude Code local settings
+.claude/
