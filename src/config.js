@@ -59,6 +59,19 @@ export const SEASONS = {
   },
 };
 
-const fast = new URLSearchParams(window.location.search).get('fast');
+const params = new URLSearchParams(window.location.search);
 
-export const TIME_SCALE = fast === null ? 1 : Number(fast) || 60;
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const MAX_TIME_SCALE = 100;
+const MAX_ORBIT_SPEED = 10;
+
+const fast = params.get('fast');
+const requestedTimeScale = fast === null ? 1 : Number(fast) || 60;
+
+export const TIME_SCALE = clamp(requestedTimeScale, 1, MAX_TIME_SCALE);
+
+const orbit = params.get('orbit');
+const requestedOrbitSpeed = orbit === null ? 0 : orbit === '' ? 1 : Number(orbit);
+
+export const ORBIT_SPEED = Number.isNaN(requestedOrbitSpeed) ? 1 : clamp(requestedOrbitSpeed, 0, MAX_ORBIT_SPEED);
