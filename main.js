@@ -27,6 +27,7 @@ import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import treeUrl from './assets/tree.glb?url';
 import barkColorUrl from './assets/textures/bark_basecolor.png?url';
 import leafUrl from './assets/textures/leaf.png?url';
+import groundUrl from './assets/textures/ground.jpg?url';
 
 const LEAF_LAYERS = [
   { textureUrl: leafUrl, count: 1800, scale: [0.08, 0.26], pivot: [0.5, 0], spread: 0.25, awayBias: 0.3, brightness: [0.6, 1.1], fold: 0.1 },
@@ -42,7 +43,7 @@ const FALLING = {
 };
 
 const GROUND_LEAVES = {
-  count: 500,
+  count: 120,
   scale: [0.1, 0.24],
   brightness: [0.22, 0.5],
   margin: 0.95,
@@ -51,18 +52,31 @@ const GROUND_LEAVES = {
 const SEASONS = {
   spring: {
     tone: { hue: 96 / 360, blend: 0.9, saturation: 1, value: 0.85, scale: 0.45, density: 0.35 },
+    ground: { hue: 85 / 360, blend: 0.75, saturation: 0.9, value: 0.62 },
     crown: true, falling: false, litter: false, snow: false, regrow: true,
   },
   summer: {
     tone: { hue: 118 / 360, blend: 0.88, saturation: 0.92, value: 0.66, scale: 1, density: 1 },
+    ground: { hue: 100 / 360, blend: 0.8, saturation: 0.85, value: 0.46 },
     crown: true, falling: false, litter: false, snow: false, regrow: true,
   },
   autumn: {
     tone: { hue: 118 / 360, blend: 0, saturation: 1, value: 1, scale: 1, density: 1 },
+    ground: { hue: 100 / 360, blend: 0, saturation: 1.2, value: 0.62 },
     crown: true, falling: true, litter: true, snow: false,
   },
   winter: { crown: false, falling: false, litter: false, snow: true },
 };
+
+const TRANSITION = {
+  shedDuration: 1.4,
+};
+
+const leafShed = { value: 0 };
+
+const groundTone = Object.fromEntries(
+  Object.entries(SEASONS.autumn.ground).map(([key, value]) => [key, { value }]),
+);
 
 const leafTone = Object.fromEntries(
   Object.entries(SEASONS.autumn.tone).map(([key, value]) => [key, { value }]),
@@ -120,39 +134,7 @@ function createBarkMaterial() {
   return new MeshStandardMaterial({ map, roughness: 0.9, metalness: 0 });
 }
 
-function applyLeafTone(material) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uLeafHue = leafTone.hue;
-    shader.uniforms.uLeafBlend = leafTone.blend;
-    shader.uniforms.uLeafSaturation = leafTone.saturation;
-    shader.uniforms.uLeafValue = leafTone.value;
-    shader.uniforms.uLeafScale = leafTone.scale;
-    shader.uniforms.uLeafDensity = leafTone.density;
-
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        uniform float uLeafScale;
-        uniform float uLeafDensity;`,
-      )
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-        float leafHash = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
-        float leafGrow = smoothstep(0.0, 0.12, uLeafDensity * 1.12 - leafHash);
-        transformed *= uLeafScale * leafGrow;`,
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        uniform float uLeafHue;
-        uniform float uLeafBlend;
-        uniform float uLeafSaturation;
-        uniform float uLeafValue;
-
+const HSV_GLSL = `
         vec3 rgb2hsv(vec3 c) {
           vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
           vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -166,7 +148,62 @@ function applyLeafTone(material) {
           vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
           vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
           return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-        }`,
+        }
+`;
+
+const GROUND_LEAF_HEIGHT = FALLING.groundY;
+
+function applyLeafTone(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uLeafHue = leafTone.hue;
+    shader.uniforms.uLeafBlend = leafTone.blend;
+    shader.uniforms.uLeafSaturation = leafTone.saturation;
+    shader.uniforms.uLeafValue = leafTone.value;
+    shader.uniforms.uLeafScale = leafTone.scale;
+    shader.uniforms.uLeafDensity = leafTone.density;
+    shader.uniforms.uLeafShed = leafShed;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float uLeafScale;
+        uniform float uLeafDensity;
+        uniform float uLeafShed;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        float leafHash = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+        float leafGrow = smoothstep(0.0, 0.12, uLeafDensity * 1.12 - leafHash);
+        float shedT = clamp((uLeafShed - leafHash * 0.4) / 0.6, 0.0, 1.0);
+        transformed *= uLeafScale * leafGrow * (1.0 - smoothstep(0.8, 1.0, shedT));`,
+      )
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        #ifdef USE_INSTANCING
+          if (shedT > 0.0) {
+            float leafHeight = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+            float fallT = shedT * shedT;
+            vec3 drift = vec3(sin(leafHash * 40.0), 0.0, cos(leafHash * 40.0)) * 0.3 * shedT;
+            vec3 shedOffset = vec3(0.0, -max(leafHeight - ${GROUND_LEAF_HEIGHT.toFixed(3)}, 0.0) * fallT, 0.0) + drift;
+            mvPosition.xyz += (viewMatrix * vec4(shedOffset, 0.0)).xyz;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        #endif`,
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float uLeafHue;
+        uniform float uLeafBlend;
+        uniform float uLeafSaturation;
+        uniform float uLeafValue;
+
+        ${HSV_GLSL}`,
       )
       .replace(
         '#include <map_fragment>',
@@ -177,6 +214,40 @@ function applyLeafTone(material) {
         leafHsv.y = clamp(leafHsv.y * uLeafSaturation, 0.0, 1.0);
         leafHsv.z *= uLeafValue;
         diffuseColor.rgb = hsv2rgb(leafHsv);`,
+      );
+  };
+}
+
+function applyGroundTone(material) {
+  const previous = material.onBeforeCompile;
+
+  material.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
+    shader.uniforms.uGroundHue = groundTone.hue;
+    shader.uniforms.uGroundBlend = groundTone.blend;
+    shader.uniforms.uGroundSaturation = groundTone.saturation;
+    shader.uniforms.uGroundValue = groundTone.value;
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float uGroundHue;
+        uniform float uGroundBlend;
+        uniform float uGroundSaturation;
+        uniform float uGroundValue;
+
+        ${HSV_GLSL}`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        vec3 groundHsv = rgb2hsv(diffuseColor.rgb);
+        float groundHueDiff = fract(uGroundHue - groundHsv.x + 0.5) - 0.5;
+        groundHsv.x = fract(groundHsv.x + groundHueDiff * uGroundBlend);
+        groundHsv.y = clamp(groundHsv.y * uGroundSaturation, 0.0, 1.0);
+        groundHsv.z *= uGroundValue;
+        diffuseColor.rgb = hsv2rgb(groundHsv);`,
       );
   };
 }
@@ -475,22 +546,30 @@ let groundLeaves = null;
 const seasonButtons = document.querySelectorAll('[data-season]');
 
 let toneTarget = SEASONS.autumn.tone;
+let groundToneTarget = SEASONS.autumn.ground;
+let shedTime = null;
 
 function applySeason() {
   const config = SEASONS[season];
 
   const crownWasVisible = crownLeaves ? crownLeaves.visible : false;
+  const shedding = !config.crown && crownWasVisible;
 
-  if (crownLeaves) crownLeaves.visible = config.crown;
+  if (crownLeaves) crownLeaves.visible = config.crown || shedding;
   if (fallingLeaves) fallingLeaves.mesh.visible = config.falling;
-  if (snow) snow.visible = config.snow;
-  if (groundLeaves) groundLeaves.visible = config.litter;
+  if (groundLeaves) groundLeaves.visible = config.litter || shedding;
+  if (snow) snow.visible = config.snow && !shedding;
   if (config.regrow) fallingLeaves?.reset();
+
+  leafShed.value = 0;
+  shedTime = shedding ? 0 : null;
 
   if (config.tone) {
     toneTarget = config.tone;
+    groundToneTarget = config.ground;
     if (!crownWasVisible) {
       for (const key of Object.keys(leafTone)) leafTone[key].value = toneTarget[key];
+      for (const key of Object.keys(groundTone)) groundTone[key].value = groundToneTarget[key];
     }
   }
 
@@ -505,10 +584,30 @@ function updateLeafTone(delta) {
   for (const key of Object.keys(leafTone)) {
     leafTone[key].value += (toneTarget[key] - leafTone[key].value) * amount;
   }
+
+  for (const key of Object.keys(groundTone)) {
+    groundTone[key].value += (groundToneTarget[key] - groundTone[key].value) * amount;
+  }
+}
+
+function updateTransitions(delta) {
+  if (shedTime === null) return;
+
+  shedTime += delta;
+  leafShed.value = Math.min(shedTime / TRANSITION.shedDuration, 1);
+  if (shedTime < TRANSITION.shedDuration) return;
+
+  const config = SEASONS[season];
+  crownLeaves.visible = false;
+  if (groundLeaves) groundLeaves.visible = config.litter;
+  if (snow) snow.visible = config.snow;
+  shedTime = null;
 }
 
 for (const button of seasonButtons) {
   button.addEventListener('click', () => {
+    if (button.dataset.season === season) return;
+
     season = button.dataset.season;
     applySeason();
   });
@@ -522,11 +621,17 @@ new GLTFLoader().load(treeUrl, (gltf) => {
   snow = gltf.scene.getObjectByName('snow');
 
   for (const mesh of [trunk, twigs]) mesh.material = barkMaterial;
-  ground.material = new MeshStandardMaterial({ color: 0x3a2f24, roughness: 1, metalness: 0 });
+  const groundMap = new TextureLoader().load(groundUrl);
+  groundMap.colorSpace = SRGBColorSpace;
+  groundMap.wrapS = groundMap.wrapT = RepeatWrapping;
+  groundMap.repeat.set(3, 3);
+  groundMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  ground.material = new MeshStandardMaterial({ map: groundMap, roughness: 1, metalness: 0 });
   snow.material = new MeshStandardMaterial({ color: 0xeef3ff, roughness: 0.85, metalness: 0 });
 
   const measuredGround = measureGround(ground);
   applyEdgeFade(ground.material, measuredGround);
+  applyGroundTone(ground.material);
   applyEdgeFade(snow.material, measuredGround, GROUND_FADE.snowMaxY);
 
   scene.add(gltf.scene);
@@ -559,6 +664,7 @@ function tick() {
 
   if (SEASONS[season].falling) fallingLeaves?.update(delta);
   updateLeafTone(delta);
+  updateTransitions(delta);
   controls.update(delta);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
