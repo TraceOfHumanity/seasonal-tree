@@ -1,13 +1,19 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Maple Tree</title>
+    <title>Seasonal Tree</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <canvas id="scene"></canvas>
+    <div class="season-switch" role="group" aria-label="Season">
+      <button type="button" data-season="spring" aria-pressed="false">Spring</button>
+      <button type="button" data-season="summer" aria-pressed="false">Summer</button>
+      <button type="button" data-season="autumn" aria-pressed="true">Autumn</button>
+      <button type="button" data-season="winter" aria-pressed="false">Winter</button>
+    </div>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
