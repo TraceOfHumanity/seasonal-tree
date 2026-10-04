@@ -9,6 +9,7 @@ import {
   TextureLoader,
   MeshStandardMaterial,
   RepeatWrapping,
+  EquirectangularReflectionMapping,
   SRGBColorSpace,
   InstancedMesh,
   PlaneGeometry,
@@ -23,11 +24,14 @@ import {
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
+import { createSnowfall } from './snowfall.js';
 import treeUrl from './assets/tree.glb?url';
 import barkColorUrl from './assets/textures/bark_basecolor.png?url';
 import leafUrl from './assets/textures/leaf.png?url';
 import groundUrl from './assets/textures/ground.jpg?url';
+import skyUrl from './assets/textures/sky.hdr?url';
 
 const LEAF_LAYERS = [
   { textureUrl: leafUrl, count: 1800, scale: [0.08, 0.26], pivot: [0.5, 0], spread: 0.25, awayBias: 0.3, brightness: [0.6, 1.1], fold: 0.1 },
@@ -46,26 +50,32 @@ const GROUND_LEAVES = {
   count: 120,
   scale: [0.1, 0.24],
   brightness: [0.22, 0.5],
-  margin: 0.95,
+  margin: 0.55,
 };
 
 const SEASONS = {
   spring: {
     tone: { hue: 96 / 360, blend: 0.9, saturation: 1, value: 0.85, scale: 0.45, density: 0.35 },
     ground: { hue: 85 / 360, blend: 0.75, saturation: 0.9, value: 0.62 },
+    light: { environment: 0.25, background: 0.1 },
     crown: true, falling: false, litter: false, snow: false, regrow: true,
   },
   summer: {
     tone: { hue: 118 / 360, blend: 0.88, saturation: 0.92, value: 0.66, scale: 1, density: 1 },
     ground: { hue: 100 / 360, blend: 0.8, saturation: 0.85, value: 0.46 },
+    light: { environment: 0.35, background: 0.15 },
     crown: true, falling: false, litter: false, snow: false, regrow: true,
   },
   autumn: {
     tone: { hue: 118 / 360, blend: 0, saturation: 1, value: 1, scale: 1, density: 1 },
     ground: { hue: 100 / 360, blend: 0, saturation: 1.2, value: 0.62 },
+    light: { environment: 0.2, background: 0.05 },
     crown: true, falling: true, litter: true, snow: false,
   },
-  winter: { crown: false, falling: false, litter: false, snow: true },
+  winter: {
+    light: { environment: 0.17, background: 0.05 },
+    crown: false, falling: false, litter: false, snow: true,
+  },
 };
 
 const TRANSITION = {
@@ -107,18 +117,41 @@ const scene = new Scene();
 const background = new Color(0x0b0d12);
 scene.background = background;
 
+const lightLevel = { ...SEASONS.autumn.light };
+let lightTarget = SEASONS.autumn.light;
+
 const camera = new PerspectiveCamera(45, 1, 0.1, 100);
 camera.position.set(0, 2.8, 9);
 
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 2.5, 0);
 controls.enableDamping = true;
+
+const CAMERA_MIN_HEIGHT = 0.75;
+
+function limitCameraBelowGround() {
+  const drop = controls.target.y - CAMERA_MIN_HEIGHT;
+  const distance = camera.position.distanceTo(controls.target);
+  controls.maxPolarAngle = distance > drop ? Math.acos(-drop / distance) : Math.PI;
+}
+
+limitCameraBelowGround();
 controls.update();
 
 scene.add(new HemisphereLight(0xcddeff, 0x4b3d30, 1.9));
 const sun = new DirectionalLight(0xfff1d6, 2.5);
 sun.position.set(4, 8, 5);
 scene.add(sun);
+
+new HDRLoader().load(skyUrl, (texture) => {
+  texture.mapping = EquirectangularReflectionMapping;
+  scene.environment = texture;
+  scene.background = texture;
+  applyLight();
+});
+
+const snowfall = createSnowfall(renderer.getPixelRatio());
+scene.add(snowfall.points);
 
 const clock = new Clock();
 
@@ -464,7 +497,6 @@ function applyEdgeFade(material, { center, radius }, maxY = Infinity) {
     shader.uniforms.uFadeStart = { value: radius * GROUND_FADE.start };
     shader.uniforms.uFadeEnd = { value: radius * GROUND_FADE.end };
     shader.uniforms.uFadeMaxY = { value: maxY };
-    shader.uniforms.uFadeColor = { value: background };
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFadeWorld;')
@@ -486,15 +518,14 @@ function applyEdgeFade(material, { center, radius }, maxY = Infinity) {
         uniform vec2 uFadeCenter;
         uniform float uFadeStart;
         uniform float uFadeEnd;
-        uniform float uFadeMaxY;
-        uniform vec3 uFadeColor;`,
+        uniform float uFadeMaxY;`,
       )
       .replace(
         '#include <opaque_fragment>',
         `#include <opaque_fragment>
         float fadeAmount = smoothstep(uFadeStart, uFadeEnd, distance(vFadeWorld.xz, uFadeCenter));
         fadeAmount *= step(vFadeWorld.y, uFadeMaxY);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, uFadeColor, fadeAmount);`,
+        gl_FragColor.a *= 1.0 - fadeAmount;`,
       );
   };
 }
@@ -507,7 +538,6 @@ function createGroundLeaves(crown, ground) {
   const radius = measured.radius * margin;
 
   const material = crown.material.clone();
-  applyEdgeFade(material, measured);
 
   const mesh = new InstancedMesh(crown.geometry, material, count);
   const dummy = new Object3D();
@@ -542,6 +572,7 @@ let crownLeaves = null;
 let fallingLeaves = null;
 let snow = null;
 let groundLeaves = null;
+let groundMesh = null;
 
 const seasonButtons = document.querySelectorAll('[data-season]');
 
@@ -559,10 +590,13 @@ function applySeason() {
   if (fallingLeaves) fallingLeaves.mesh.visible = config.falling;
   if (groundLeaves) groundLeaves.visible = config.litter || shedding;
   if (snow) snow.visible = config.snow && !shedding;
+  if (groundMesh) groundMesh.visible = !config.snow || shedding;
+  snowfall.setActive(config.snow && !shedding);
   if (config.regrow) fallingLeaves?.reset();
 
   leafShed.value = 0;
   shedTime = shedding ? 0 : null;
+  lightTarget = config.light;
 
   if (config.tone) {
     toneTarget = config.tone;
@@ -576,6 +610,20 @@ function applySeason() {
   for (const button of seasonButtons) {
     button.setAttribute('aria-pressed', String(button.dataset.season === season));
   }
+}
+
+function applyLight() {
+  scene.environmentIntensity = lightLevel.environment;
+  scene.backgroundIntensity = lightLevel.background;
+}
+
+function updateLight(delta) {
+  const amount = 1 - Math.exp(-delta * 3);
+
+  for (const key of Object.keys(lightLevel)) {
+    lightLevel[key] += (lightTarget[key] - lightLevel[key]) * amount;
+  }
+  applyLight();
 }
 
 function updateLeafTone(delta) {
@@ -601,6 +649,8 @@ function updateTransitions(delta) {
   crownLeaves.visible = false;
   if (groundLeaves) groundLeaves.visible = config.litter;
   if (snow) snow.visible = config.snow;
+  if (groundMesh) groundMesh.visible = !config.snow;
+  snowfall.setActive(config.snow);
   shedTime = null;
 }
 
@@ -618,6 +668,7 @@ new GLTFLoader().load(treeUrl, (gltf) => {
   const trunk = gltf.scene.getObjectByName('trunk');
   const twigs = gltf.scene.getObjectByName('twigs');
   const ground = gltf.scene.getObjectByName('ground');
+  groundMesh = ground;
   snow = gltf.scene.getObjectByName('snow');
 
   for (const mesh of [trunk, twigs]) mesh.material = barkMaterial;
@@ -626,8 +677,8 @@ new GLTFLoader().load(treeUrl, (gltf) => {
   groundMap.wrapS = groundMap.wrapT = RepeatWrapping;
   groundMap.repeat.set(3, 3);
   groundMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  ground.material = new MeshStandardMaterial({ map: groundMap, roughness: 1, metalness: 0 });
-  snow.material = new MeshStandardMaterial({ color: 0xeef3ff, roughness: 0.85, metalness: 0 });
+  ground.material = new MeshStandardMaterial({ map: groundMap, roughness: 1, metalness: 0, transparent: true });
+  snow.material = new MeshStandardMaterial({ color: 0xeef3ff, roughness: 0.85, metalness: 0, transparent: true });
 
   const measuredGround = measureGround(ground);
   applyEdgeFade(ground.material, measuredGround);
@@ -663,8 +714,11 @@ function tick() {
   const delta = Math.min(clock.getDelta(), 0.1);
 
   if (SEASONS[season].falling) fallingLeaves?.update(delta);
+  snowfall.update(delta);
   updateLeafTone(delta);
+  updateLight(delta);
   updateTransitions(delta);
+  limitCameraBelowGround();
   controls.update(delta);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
