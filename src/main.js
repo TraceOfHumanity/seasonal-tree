@@ -27,11 +27,24 @@ import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { createSnowfall } from './snowfall.js';
-import treeUrl from './assets/tree.glb?url';
-import barkColorUrl from './assets/textures/bark_basecolor.png?url';
-import leafUrl from './assets/textures/leaf.png?url';
-import groundUrl from './assets/textures/ground.jpg?url';
-import skyUrl from './assets/textures/sky.hdr?url';
+import { injectShader } from './shaders/inject.js';
+import hsvGlsl from './shaders/hsv.glsl?raw';
+import leafVertexCommon from './shaders/leaf/vertex_common.glsl?raw';
+import leafVertexBegin from './shaders/leaf/vertex_begin.glsl?raw';
+import leafVertexProject from './shaders/leaf/vertex_project.glsl?raw';
+import leafFragmentCommon from './shaders/leaf/fragment_common.glsl?raw';
+import leafFragmentMap from './shaders/leaf/fragment_map.glsl?raw';
+import groundToneCommon from './shaders/ground/tone_common.glsl?raw';
+import groundToneMap from './shaders/ground/tone_map.glsl?raw';
+import edgeFadeVertexCommon from './shaders/edge-fade/vertex_common.glsl?raw';
+import edgeFadeVertexBegin from './shaders/edge-fade/vertex_begin.glsl?raw';
+import edgeFadeFragmentCommon from './shaders/edge-fade/fragment_common.glsl?raw';
+import edgeFadeFragmentOpaque from './shaders/edge-fade/fragment_opaque.glsl?raw';
+import treeUrl from '../assets/tree.glb?url';
+import barkColorUrl from '../assets/textures/bark_basecolor.png?url';
+import leafUrl from '../assets/textures/leaf.png?url';
+import groundUrl from '../assets/textures/ground.jpg?url';
+import skyUrl from '../assets/textures/sky.hdr?url';
 
 const LEAF_LAYERS = [
   { textureUrl: leafUrl, count: 1800, scale: [0.08, 0.26], pivot: [0.5, 0], spread: 0.25, awayBias: 0.3, brightness: [0.6, 1.1], fold: 0.1 },
@@ -167,25 +180,6 @@ function createBarkMaterial() {
   return new MeshStandardMaterial({ map, roughness: 0.9, metalness: 0 });
 }
 
-const HSV_GLSL = `
-        vec3 rgb2hsv(vec3 c) {
-          vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-          vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-          vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-          float d = q.x - min(q.w, q.y);
-          float e = 1.0e-10;
-          return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-        }
-
-        vec3 hsv2rgb(vec3 c) {
-          vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-          vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-          return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-        }
-`;
-
-const GROUND_LEAF_HEIGHT = FALLING.groundY;
-
 function applyLeafTone(material) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uLeafHue = leafTone.hue;
@@ -195,59 +189,18 @@ function applyLeafTone(material) {
     shader.uniforms.uLeafScale = leafTone.scale;
     shader.uniforms.uLeafDensity = leafTone.density;
     shader.uniforms.uLeafShed = leafShed;
+    shader.uniforms.uLeafGroundY = { value: FALLING.groundY };
 
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        uniform float uLeafScale;
-        uniform float uLeafDensity;
-        uniform float uLeafShed;`,
-      )
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-        float leafHash = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
-        float leafGrow = smoothstep(0.0, 0.12, uLeafDensity * 1.12 - leafHash);
-        float shedT = clamp((uLeafShed - leafHash * 0.4) / 0.6, 0.0, 1.0);
-        transformed *= uLeafScale * leafGrow * (1.0 - smoothstep(0.8, 1.0, shedT));`,
-      )
-      .replace(
-        '#include <project_vertex>',
-        `#include <project_vertex>
-        #ifdef USE_INSTANCING
-          if (shedT > 0.0) {
-            float leafHeight = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
-            float fallT = shedT * shedT;
-            vec3 drift = vec3(sin(leafHash * 40.0), 0.0, cos(leafHash * 40.0)) * 0.3 * shedT;
-            vec3 shedOffset = vec3(0.0, -max(leafHeight - ${GROUND_LEAF_HEIGHT.toFixed(3)}, 0.0) * fallT, 0.0) + drift;
-            mvPosition.xyz += (viewMatrix * vec4(shedOffset, 0.0)).xyz;
-            gl_Position = projectionMatrix * mvPosition;
-          }
-        #endif`,
-      );
+    shader.vertexShader = injectShader(shader.vertexShader, {
+      common: leafVertexCommon,
+      begin_vertex: leafVertexBegin,
+      project_vertex: leafVertexProject,
+    });
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        uniform float uLeafHue;
-        uniform float uLeafBlend;
-        uniform float uLeafSaturation;
-        uniform float uLeafValue;
-
-        ${HSV_GLSL}`,
-      )
-      .replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-        vec3 leafHsv = rgb2hsv(diffuseColor.rgb);
-        float hueDiff = fract(uLeafHue - leafHsv.x + 0.5) - 0.5;
-        leafHsv.x = fract(leafHsv.x + hueDiff * uLeafBlend);
-        leafHsv.y = clamp(leafHsv.y * uLeafSaturation, 0.0, 1.0);
-        leafHsv.z *= uLeafValue;
-        diffuseColor.rgb = hsv2rgb(leafHsv);`,
-      );
+    shader.fragmentShader = injectShader(shader.fragmentShader, {
+      common: `${leafFragmentCommon}\n${hsvGlsl}`,
+      map_fragment: leafFragmentMap,
+    });
   };
 }
 
@@ -261,27 +214,10 @@ function applyGroundTone(material) {
     shader.uniforms.uGroundSaturation = groundTone.saturation;
     shader.uniforms.uGroundValue = groundTone.value;
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        uniform float uGroundHue;
-        uniform float uGroundBlend;
-        uniform float uGroundSaturation;
-        uniform float uGroundValue;
-
-        ${HSV_GLSL}`,
-      )
-      .replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-        vec3 groundHsv = rgb2hsv(diffuseColor.rgb);
-        float groundHueDiff = fract(uGroundHue - groundHsv.x + 0.5) - 0.5;
-        groundHsv.x = fract(groundHsv.x + groundHueDiff * uGroundBlend);
-        groundHsv.y = clamp(groundHsv.y * uGroundSaturation, 0.0, 1.0);
-        groundHsv.z *= uGroundValue;
-        diffuseColor.rgb = hsv2rgb(groundHsv);`,
-      );
+    shader.fragmentShader = injectShader(shader.fragmentShader, {
+      common: `${groundToneCommon}\n${hsvGlsl}`,
+      map_fragment: groundToneMap,
+    });
   };
 }
 
@@ -498,35 +434,15 @@ function applyEdgeFade(material, { center, radius }, maxY = Infinity) {
     shader.uniforms.uFadeEnd = { value: radius * GROUND_FADE.end };
     shader.uniforms.uFadeMaxY = { value: maxY };
 
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFadeWorld;')
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-        vec4 fadeWorld = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-          fadeWorld = instanceMatrix * fadeWorld;
-        #endif
-        vFadeWorld = (modelMatrix * fadeWorld).xyz;`,
-      );
+    shader.vertexShader = injectShader(shader.vertexShader, {
+      common: edgeFadeVertexCommon,
+      begin_vertex: edgeFadeVertexBegin,
+    });
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-        varying vec3 vFadeWorld;
-        uniform vec2 uFadeCenter;
-        uniform float uFadeStart;
-        uniform float uFadeEnd;
-        uniform float uFadeMaxY;`,
-      )
-      .replace(
-        '#include <opaque_fragment>',
-        `#include <opaque_fragment>
-        float fadeAmount = smoothstep(uFadeStart, uFadeEnd, distance(vFadeWorld.xz, uFadeCenter));
-        fadeAmount *= step(vFadeWorld.y, uFadeMaxY);
-        gl_FragColor.a *= 1.0 - fadeAmount;`,
-      );
+    shader.fragmentShader = injectShader(shader.fragmentShader, {
+      common: edgeFadeFragmentCommon,
+      opaque_fragment: edgeFadeFragmentOpaque,
+    });
   };
 }
 

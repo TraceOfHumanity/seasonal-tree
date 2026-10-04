@@ -1,39 +1,11 @@
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Points, ShaderMaterial } from 'three';
 
+import vertexShader from './shaders/snow/vertex.glsl?raw';
+import fragmentShader from './shaders/snow/fragment.glsl?raw';
+
 const COUNT = 180;
 const VOLUME = { radius: 2.2, height: 5.6 };
 const GROUND_Y = 0.05;
-
-const vertexShader = `
-  attribute float aSize;
-  attribute float aTint;
-  uniform float uPixelRatio;
-  uniform vec3 uColorCool;
-  uniform vec3 uColorWarm;
-  uniform float uHeight;
-  uniform float uOpacity;
-  varying vec3 vColor;
-
-  void main() {
-    vec4 viewPosition = viewMatrix * modelMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * viewPosition;
-
-    gl_PointSize = aSize * uPixelRatio * (300.0 / -viewPosition.z);
-
-    float heightProgression = clamp(1.0 - position.y / uHeight, 0.0, 1.0);
-    vec3 baseColor = mix(uColorCool, uColorWarm, heightProgression);
-    vColor = baseColor * (0.85 + aTint * 0.3) * uOpacity;
-  }
-`;
-
-const fragmentShader = `
-  varying vec3 vColor;
-
-  void main() {
-    float alpha = smoothstep(0.5, 0.0, length(gl_PointCoord - vec2(0.5)));
-    gl_FragColor = vec4(vColor, alpha * alpha);
-  }
-`;
 
 const randomBetween = (min, max) => min + Math.random() * (max - min);
 
