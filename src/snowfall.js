@@ -1,7 +1,7 @@
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Points, ShaderMaterial } from 'three';
 
-import vertexShader from './shaders/snow/vertex.glsl?raw';
-import fragmentShader from './shaders/snow/fragment.glsl?raw';
+import vertexShader from './shaders/snow/vertex.glsl';
+import fragmentShader from './shaders/snow/fragment.glsl';
 
 const COUNT = 180;
 const VOLUME = { radius: 2.2, height: 5.6 };
