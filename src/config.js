@@ -58,3 +58,7 @@ export const SEASONS = {
     crown: false, falling: false, litter: false, snow: true,
   },
 };
+
+const fast = new URLSearchParams(window.location.search).get('fast');
+
+export const TIME_SCALE = fast === null ? 1 : Number(fast) || 60;

@@ -1,4 +1,4 @@
-import { SEASONS, TRANSITION } from './config.js';
+import { SEASONS, TIME_SCALE, TRANSITION } from './config.js';
 
 export function createSeasons({ crown, falling, groundLeaves, ground, snow, snowfall, sky, leaves }) {
   const buttons = document.querySelectorAll('[data-season]');
@@ -62,7 +62,7 @@ export function createSeasons({ crown, falling, groundLeaves, ground, snow, snow
 
   return {
     update(delta) {
-      if (SEASONS[season].falling) falling.update(delta);
+      if (SEASONS[season].falling) falling.update(delta * TIME_SCALE);
       leaves.tone.update(delta);
       ground.tone.update(delta);
       updateTransitions(delta);
