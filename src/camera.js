@@ -1,6 +1,7 @@
 import { PerspectiveCamera } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+import { ORBIT_SPEED } from './config.js';
 import { canvas } from './renderer.js';
 
 const CAMERA_MIN_HEIGHT = 0.75;
@@ -14,6 +15,8 @@ controls.target.set(0, 2.5, 0);
 controls.enableDamping = true;
 controls.minDistance = CAMERA_DISTANCE.min;
 controls.maxDistance = CAMERA_DISTANCE.max;
+controls.autoRotate = ORBIT_SPEED > 0;
+controls.autoRotateSpeed = ORBIT_SPEED;
 
 function limitCameraBelowGround() {
   const drop = controls.target.y - CAMERA_MIN_HEIGHT;
