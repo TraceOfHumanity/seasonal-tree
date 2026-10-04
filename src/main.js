@@ -28,18 +28,11 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { createSnowfall } from './snowfall.js';
 import { injectShader } from './shaders/inject.js';
-import hsvGlsl from './shaders/hsv.glsl?raw';
-import leafVertexCommon from './shaders/leaf/vertex_common.glsl?raw';
-import leafVertexBegin from './shaders/leaf/vertex_begin.glsl?raw';
-import leafVertexProject from './shaders/leaf/vertex_project.glsl?raw';
-import leafFragmentCommon from './shaders/leaf/fragment_common.glsl?raw';
-import leafFragmentMap from './shaders/leaf/fragment_map.glsl?raw';
-import groundToneCommon from './shaders/ground/tone_common.glsl?raw';
-import groundToneMap from './shaders/ground/tone_map.glsl?raw';
-import edgeFadeVertexCommon from './shaders/edge-fade/vertex_common.glsl?raw';
-import edgeFadeVertexBegin from './shaders/edge-fade/vertex_begin.glsl?raw';
-import edgeFadeFragmentCommon from './shaders/edge-fade/fragment_common.glsl?raw';
-import edgeFadeFragmentOpaque from './shaders/edge-fade/fragment_opaque.glsl?raw';
+import leafVertex from './shaders/leaf/vertex.glsl';
+import leafFragment from './shaders/leaf/fragment.glsl';
+import groundFragment from './shaders/ground/fragment.glsl';
+import edgeFadeVertex from './shaders/edge-fade/vertex.glsl';
+import edgeFadeFragment from './shaders/edge-fade/fragment.glsl';
 import treeUrl from '../assets/tree.glb?url';
 import barkColorUrl from '../assets/textures/bark_basecolor.png?url';
 import leafUrl from '../assets/textures/leaf.png?url';
@@ -192,14 +185,14 @@ function applyLeafTone(material) {
     shader.uniforms.uLeafGroundY = { value: FALLING.groundY };
 
     shader.vertexShader = injectShader(shader.vertexShader, {
-      common: leafVertexCommon,
-      begin_vertex: leafVertexBegin,
-      project_vertex: leafVertexProject,
+      common: leafVertex,
+      begin_vertex: 'float leafHash; float shedT; leafVertexBegin(transformed, leafHash, shedT);',
+      project_vertex: 'leafVertexProject(mvPosition, leafHash, shedT);',
     });
 
     shader.fragmentShader = injectShader(shader.fragmentShader, {
-      common: `${leafFragmentCommon}\n${hsvGlsl}`,
-      map_fragment: leafFragmentMap,
+      common: leafFragment,
+      map_fragment: 'leafFragmentTone(diffuseColor);',
     });
   };
 }
@@ -215,8 +208,8 @@ function applyGroundTone(material) {
     shader.uniforms.uGroundValue = groundTone.value;
 
     shader.fragmentShader = injectShader(shader.fragmentShader, {
-      common: `${groundToneCommon}\n${hsvGlsl}`,
-      map_fragment: groundToneMap,
+      common: groundFragment,
+      map_fragment: 'groundFragmentTone(diffuseColor);',
     });
   };
 }
@@ -435,13 +428,13 @@ function applyEdgeFade(material, { center, radius }, maxY = Infinity) {
     shader.uniforms.uFadeMaxY = { value: maxY };
 
     shader.vertexShader = injectShader(shader.vertexShader, {
-      common: edgeFadeVertexCommon,
-      begin_vertex: edgeFadeVertexBegin,
+      common: edgeFadeVertex,
+      begin_vertex: 'edgeFadeVertex(transformed);',
     });
 
     shader.fragmentShader = injectShader(shader.fragmentShader, {
-      common: edgeFadeFragmentCommon,
-      opaque_fragment: edgeFadeFragmentOpaque,
+      common: edgeFadeFragment,
+      opaque_fragment: 'gl_FragColor.a *= edgeFadeAlpha();',
     });
   };
 }
