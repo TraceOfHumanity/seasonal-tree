@@ -38,6 +38,7 @@ const FALLING = {
   perSpawn: [1, 2],
   speed: [0.5, 0.9],
   groundY: 0,
+  easeIn: 0.8,
 };
 
 const randomBetween = (min, max) => min + Math.random() * (max - min);
@@ -157,7 +158,7 @@ function createLeafLayer(twigs, { textureUrl, count, scale, pivot, spread, awayB
 }
 
 function createFallingLeaves(crown) {
-  const { poolSize, interval, perSpawn, speed, groundY } = FALLING;
+  const { poolSize, interval, perSpawn, speed, groundY, easeIn } = FALLING;
 
   const mesh = new InstancedMesh(crown.geometry, crown.material, poolSize);
   mesh.frustumCulled = false;
@@ -173,10 +174,12 @@ function createFallingLeaves(crown) {
     phase: 0,
     spin: 0,
     wind: 0,
+    startQuat: new Quaternion(),
   }));
 
   const dummy = new Object3D();
   dummy.rotation.order = 'YXZ';
+  const target = new Quaternion();
   const matrix = new Matrix4();
   const hidden = new Matrix4().makeScale(0, 0, 0);
   const color = new Color(1, 1, 1);
@@ -186,19 +189,31 @@ function createFallingLeaves(crown) {
     mesh.setColorAt(i, color);
   }
 
+  const remaining = Array.from({ length: crown.count }, (_, i) => i);
+
   function spawn() {
+    if (remaining.length === 0) return;
+
     const slot = leaves.find((leaf) => !leaf.active);
     if (!slot) return;
 
-    const source = Math.floor(Math.random() * crown.count);
+    const pick = Math.floor(Math.random() * remaining.length);
+    const source = remaining[pick];
+    remaining[pick] = remaining[remaining.length - 1];
+    remaining.pop();
+
     crown.getMatrixAt(source, matrix);
     matrix.decompose(slot.origin, dummy.quaternion, dummy.scale);
     crown.getColorAt(source, color);
     mesh.setColorAt(leaves.indexOf(slot), color);
     mesh.instanceColor.needsUpdate = true;
 
+    crown.setMatrixAt(source, hidden);
+    crown.instanceMatrix.needsUpdate = true;
+
     slot.active = true;
     slot.age = 0;
+    slot.startQuat.copy(dummy.quaternion);
     slot.scale = dummy.scale.x;
     slot.speed = randomBetween(speed[0], speed[1]);
     slot.swayAmp = randomBetween(0.15, 0.4);
@@ -223,7 +238,9 @@ function createFallingLeaves(crown) {
 
       leaf.age += delta;
       const t = leaf.age;
-      const y = leaf.origin.y - leaf.speed * t;
+      const blend = Math.min(t / easeIn, 1);
+      const smooth = blend * blend * (3 - 2 * blend);
+      const y = leaf.origin.y - leaf.speed * (t - easeIn * (1 - Math.exp(-t / easeIn)));
 
       if (y < groundY) {
         leaf.active = false;
@@ -232,16 +249,17 @@ function createFallingLeaves(crown) {
       }
 
       const sway = t * leaf.swayFreq + leaf.phase;
-      dummy.position.set(
-        leaf.origin.x + Math.sin(sway) * leaf.swayAmp + leaf.wind * t,
-        y,
-        leaf.origin.z + Math.cos(sway * 0.8) * leaf.swayAmp,
-      );
+      const swayX = (Math.sin(sway) - Math.sin(leaf.phase)) * leaf.swayAmp * smooth;
+      const swayZ = (Math.cos(sway * 0.8) - Math.cos(leaf.phase * 0.8)) * leaf.swayAmp * smooth;
+      dummy.position.set(leaf.origin.x + swayX + leaf.wind * t * smooth, y, leaf.origin.z + swayZ);
+
       dummy.rotation.set(
         Math.PI / 2 + Math.sin(sway * 1.3) * 0.7,
         leaf.spin * t,
         Math.cos(sway) * 0.7,
       );
+      target.copy(dummy.quaternion);
+      dummy.quaternion.copy(leaf.startQuat).slerp(target, smooth);
       dummy.scale.setScalar(leaf.scale);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
