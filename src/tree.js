@@ -22,9 +22,10 @@ export function loadTree() {
     const twigs = root.getObjectByName('twigs');
     const ground = root.getObjectByName('ground');
     const snow = root.getObjectByName('snow');
+    const twigsSmall = root.getObjectByName('twigs_small');
 
     const barkMaterial = createBarkMaterial();
-    for (const mesh of [trunk, twigs]) mesh.material = barkMaterial;
+    for (const mesh of [trunk, twigs, twigsSmall]) mesh.material = barkMaterial;
 
     return { root, trunk, twigs, ground, snow };
   });
