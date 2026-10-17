@@ -3,6 +3,7 @@ import { Timer } from 'three';
 import { camera, updateCamera } from './camera.js';
 import { createFallingLeaves } from './falling-leaves.js';
 import { createGround, createGroundLeaves } from './ground.js';
+import { setupInfoPanel } from './info-panel.js';
 import { createLeaves } from './leaves.js';
 import { addLights } from './lights.js';
 import { canvas, renderer, scene } from './renderer.js';
@@ -12,6 +13,7 @@ import { setupSnow } from './snow.js';
 import { createSnowfall } from './snowfall.js';
 import { loadTree } from './tree.js';
 
+setupInfoPanel();
 addLights(scene);
 
 const sky = createSky(scene);

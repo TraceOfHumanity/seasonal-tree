@@ -1,8 +1,8 @@
-import { SEASONS, TIME_SCALE, TRANSITION } from './config.js';
+import { getSeasonForDate, SEASONS, TIME_SCALE, TRANSITION } from './config.js';
 
 export function createSeasons({ crown, falling, groundLeaves, ground, snow, snowfall, sky, leaves }) {
   const buttons = document.querySelectorAll('[data-season]');
-  let season = 'autumn';
+  let season = getSeasonForDate();
   let shedTime = null;
 
   function apply() {

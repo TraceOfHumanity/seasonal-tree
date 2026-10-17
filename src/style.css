@@ -22,26 +22,33 @@ body {
   height: 100%;
 }
 
+:root {
+  --ui-font: clamp(11px, 2.9vw + 2px, 14px);
+  --ui-gap: clamp(2px, 0.8vw, 4px);
+  --ui-edge: clamp(8px, 3vw, 16px);
+  --ui-glass: rgba(11, 13, 18, 0.55);
+}
+
 .season-switch {
   position: fixed;
-  top: 16px;
+  top: var(--ui-edge);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--ui-gap);
+  padding: var(--ui-gap);
   border-radius: 999px;
-  background: rgba(11, 13, 18, 0.55);
+  background: var(--ui-glass);
   backdrop-filter: blur(8px);
 }
 
 .season-switch button {
-  padding: 8px 20px;
+  padding: 0.6em clamp(0.4em, 2.2vw, 1.4em);
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: rgba(255, 255, 255, 0.65);
-  font: 500 14px/1 system-ui, sans-serif;
+  font: 500 var(--ui-font) / 1 system-ui, sans-serif;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
@@ -55,7 +62,69 @@ body {
   color: #0b0d12;
 }
 
-.season-switch button:focus-visible {
+.season-switch button:focus-visible,
+.info__button:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
+}
+
+.info {
+  position: fixed;
+  top: var(--ui-edge);
+  right: var(--ui-edge);
+  font: 400 var(--ui-font) / 1.4 system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.info__button {
+  display: block;
+  width: clamp(28px, 8vw, 36px);
+  height: clamp(28px, 8vw, 36px);
+  padding: clamp(5px, 1.6vw, 7px);
+  border: 0;
+  border-radius: 999px;
+  background: var(--ui-glass);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.info__button:hover,
+.info__button[aria-expanded='true'] {
+  color: #fff;
+}
+
+.info__panel {
+  position: absolute;
+  top: calc(100% + var(--ui-gap) * 2);
+  right: 0;
+  width: min(18em, calc(100vw - var(--ui-edge) * 2));
+  padding: 1em;
+  border-radius: 1em;
+  background: rgba(11, 13, 18, 0.8);
+  backdrop-filter: blur(8px);
+}
+
+.info__panel[hidden] {
+  display: none;
+}
+
+.info__title {
+  margin-bottom: 0.6em;
+  font-weight: 600;
+  color: #fff;
+}
+
+.info__list dt {
+  margin-top: 0.6em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.info__list code {
+  padding: 0.1em 0.4em;
+  border-radius: 0.4em;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: 0.95em ui-monospace, monospace;
 }

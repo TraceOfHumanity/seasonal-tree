@@ -59,6 +59,14 @@ export const SEASONS = {
   },
 };
 
+export function getSeasonForDate(date = new Date()) {
+  const month = date.getMonth();
+  if (month >= 2 && month <= 4) return 'spring';
+  if (month >= 5 && month <= 7) return 'summer';
+  if (month >= 8 && month <= 10) return 'autumn';
+  return 'winter';
+}
+
 const params = new URLSearchParams(window.location.search);
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
