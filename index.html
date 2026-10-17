@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Seasonal Tree</title>
+    <script type="module" crossorigin src="./assets/index-DDUCQDxQ.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-xyDyQqEN.css">
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div class="season-switch" role="group" aria-label="Season">
+      <button type="button" data-season="spring" aria-pressed="false">Spring</button>
+      <button type="button" data-season="summer" aria-pressed="false">Summer</button>
+      <button type="button" data-season="autumn" aria-pressed="false">Autumn</button>
+      <button type="button" data-season="winter" aria-pressed="false">Winter</button>
+    </div>
+    <div class="info">
+      <button
+        type="button"
+        class="info__button"
+        aria-label="Site options"
+        aria-expanded="false"
+        aria-controls="info-panel"
+      >
+        <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
+          <path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          <circle cx="12" cy="7.5" r="1.25" fill="currentColor" />
+        </svg>
+      </button>
+      <div class="info__panel" id="info-panel" role="region" aria-label="Site options" hidden>
+        <p class="info__title">Add to the address bar</p>
+        <dl class="info__list">
+          <dt>Speed</dt>
+          <dd>
+            <code>?fast</code> &mdash; 60&times;<br />
+            <code>?fast=10</code> &mdash; 1 to 100
+          </dd>
+          <dt>Auto-rotate camera</dt>
+          <dd>
+            <code>?orbit</code> &mdash; normal<br />
+            <code>?orbit=3</code> &mdash; 0 to 10
+          </dd>
+          <dt>Both</dt>
+          <dd><code>?fast=10&amp;orbit=2</code></dd>
+        </dl>
+      </div>
+    </div>
+  </body>
+</html>
